@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import com.example.learingjetpack.lesson01.ProfileCard
-import com.example.learingjetpack.lesson01.WelcomeScreen
+import com.example.learingjetpack.lesson01.ProfileScreen
 import com.example.learingjetpack.ui.theme.LearingJetpackTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,8 +21,7 @@ class MainActivity : ComponentActivity() {
             LearingJetpackTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        WelcomeScreen()
-                        ProfileCard()
+                        ProfileScreen()
                     }
                 }
             }
