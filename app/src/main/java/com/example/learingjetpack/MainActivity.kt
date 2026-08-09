@@ -11,7 +11,9 @@ import com.example.learingjetpack.ui.theme.LearingJetpackTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val profileViewModel: ProfileViewModel by viewModels()
+    private val profileViewModel: ProfileViewModel by viewModels {
+        ProfileViewModel.Factory
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

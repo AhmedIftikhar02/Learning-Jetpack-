@@ -1,7 +1,10 @@
 package com.example.learingjetpack.lesson02
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,25 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-data class ProfileUiState(
-    val name: String = "Ahmed Iftikhar",
-    val role: String = "Android Developer",
-    val followers: Int = 120,
-    val isFollowing: Boolean = false,
-    val isLoading: Boolean = false,
-    val error: String? = null
-)
 
-sealed interface ProfileEvent {
-    data object FollowClicked : ProfileEvent
-    data object RetryClicked : ProfileEvent
-}
-
-sealed interface ProfileEffect {
-    data class ShowSnackbar(val message: String) : ProfileEffect
-}
-
-class ProfileViewModel : ViewModel() {
+class ProfileViewModel(private val repository: ProfileRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.asStateFlow()
@@ -37,53 +23,176 @@ class ProfileViewModel : ViewModel() {
     private val _effect = Channel<ProfileEffect>(Channel.BUFFERED)
     val effect = _effect.receiveAsFlow()
 
+    init {
+        loadProfiles()
+    }
+
+    private fun loadProfiles() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    profileState = ProfileListUiState.Loading
+                )
+            }
+
+            val result = repository.getProfiles()
+
+            result
+                .onSuccess { profiles ->
+
+                    val items = profiles.map { profile ->
+                        ProfileItemUiState(
+                            profile = profile
+                        )
+                    }
+
+                    _uiState.update {
+                        it.copy(
+                            profileState = if (items.isEmpty()) {
+                                ProfileListUiState.Empty
+                            } else {
+                                ProfileListUiState.Success(items)
+                            }
+                        )
+                    }
+                }
+                .onFailure { throwable ->
+
+                    _uiState.update {
+                        it.copy(
+                            profileState = ProfileListUiState.Error(
+                                message = throwable.message
+                                    ?: "Something went wrong"
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
     fun onEvent(event: ProfileEvent) {
         when (event) {
-            ProfileEvent.FollowClicked -> handleFollowClicked()
+            is ProfileEvent.FollowClicked -> handleFollowClicked(event.profileId)
             ProfileEvent.RetryClicked -> handleRetryClicked()
         }
     }
 
-    private fun handleFollowClicked() {
-        if (_uiState.value.isLoading) return
+    private fun handleFollowClicked(profileId: String) {
+
+        val currentState = _uiState.value.profileState
+
+        if (currentState !is ProfileListUiState.Success) {
+            return
+        }
 
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(isLoading = true)
-            }
 
-            delay(1000)
+            _uiState.update { state ->
 
-            val currentState = _uiState.value
-            val willFollow = !currentState.isFollowing
+                val updatedItems = currentState.profiles.map { item ->
 
-            val newFollowerCount = if (willFollow) {
-                currentState.followers + 1
-            } else {
-                currentState.followers - 1
-            }
+                    if (item.profile.id == profileId) {
+                        item.copy(isLoading = true)
+                    } else {
+                        item
+                    }
+                }
 
-            _uiState.update {
-                it.copy(
-                    isFollowing = willFollow,
-                    followers = newFollowerCount,
-                    isLoading = false
+                state.copy(
+                    profileState = ProfileListUiState.Success(
+                        updatedItems
+                    )
                 )
             }
 
-            val message = if (willFollow) {
-                "Followed successfully!"
-            } else {
-                "Unfollowed"
-            }
+            val result = repository.toggleFollow(profileId)
 
-            _effect.send(
-                ProfileEffect.ShowSnackbar(message)
-            )
+            result
+                .onSuccess { updatedProfile ->
+
+                    _uiState.update { state ->
+
+                        val currentItems =
+                            (state.profileState as? ProfileListUiState.Success)
+                                ?.profiles
+                                ?: return@update state
+
+                        val updatedItems = currentItems.map { item ->
+
+                            if (item.profile.id == profileId) {
+
+                                item.copy(
+                                    profile = updatedProfile,
+                                    isLoading = false
+                                )
+
+                            } else {
+                                item
+                            }
+                        }
+
+                        state.copy(
+                            profileState = ProfileListUiState.Success(
+                                updatedItems
+                            )
+                        )
+                    }
+
+                    val message =
+                        if (updatedProfile.isFollowing) {
+                            "Followed ${updatedProfile.name}!"
+                        } else {
+                            "Unfollowed ${updatedProfile.name}"
+                        }
+
+                    _effect.send(
+                        ProfileEffect.ShowSnackbar(message)
+                    )
+                }
+
+                .onFailure { throwable ->
+
+                    _uiState.update { state ->
+
+                        val currentItems =
+                            (state.profileState as? ProfileListUiState.Success)
+                                ?.profiles
+                                ?: return@update state
+
+                        val updatedItems = currentItems.map { item ->
+
+                            if (item.profile.id == profileId) {
+                                item.copy(isLoading = false)
+                            } else {
+                                item
+                            }
+                        }
+
+                        state.copy(
+                            profileState = ProfileListUiState.Success(
+                                updatedItems
+                            )
+                        )
+                    }
+
+                    _effect.send(
+                        ProfileEffect.ShowSnackbar(
+                            throwable.message ?: "Failed to update profile"
+                        )
+                    )
+                }
         }
     }
 
     private fun handleRetryClicked() {
-        // Later
+        loadProfiles()
+    }
+
+    companion object {
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                ProfileViewModel(FakeProfileRepository())
+            }
+        }
     }
 }

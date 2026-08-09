@@ -1,13 +1,22 @@
 package com.example.learingjetpack.lesson01
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -22,7 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.learingjetpack.lesson02.ProfileEffect
 import com.example.learingjetpack.lesson02.ProfileEvent
-import com.example.learingjetpack.lesson02.ProfileUiState
+import com.example.learingjetpack.lesson02.ProfileItemUiState
+import com.example.learingjetpack.lesson02.ProfileListUiState
 import com.example.learingjetpack.lesson02.ProfileViewModel
 
 @Composable
@@ -30,7 +40,6 @@ fun ProfileScreen(
     viewModel: ProfileViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -46,55 +55,142 @@ fun ProfileScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            ProfileCard(
-                uiState = uiState,
-                onFollowClick = {
-                    viewModel.onEvent(ProfileEvent.FollowClicked)
+            when (val state = uiState.profileState) {
+                ProfileListUiState.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
-            )
+
+                is ProfileListUiState.Success -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Profiles", style = MaterialTheme.typography.titleMedium)
+                                Text("People you may want to follow", style = MaterialTheme.typography.titleSmall)
+                            }
+                        }
+                        items(
+                            items = state.profiles,
+                            key = { itemState -> itemState.profile.id }
+                        ) { itemState ->
+                            ProfileCard(
+                                itemState = itemState,
+                                onFollowClick = {
+                                    viewModel.onEvent(ProfileEvent.FollowClicked(itemState.profile.id))
+                                }
+                            )
+                        }
+                    }
+                }
+
+                ProfileListUiState.Empty -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No profiles found.")
+                    }
+                }
+
+                is ProfileListUiState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(text = state.message)
+                            Button(onClick = { viewModel.onEvent(ProfileEvent.RetryClicked) }) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 fun ProfileCard(
-    uiState: ProfileUiState,
-    onFollowClick: () -> Unit
+    itemState: ProfileItemUiState,
+    onFollowClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
+    val profile = itemState.profile
+
+    Card(
+        modifier = modifier.fillMaxWidth()
     ) {
-        Text(text = "Profile")
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(text = uiState.name)
-            Text(text = uiState.role)
-        }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(56.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = profile.name.firstOrNull()?.toString() ?: "",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                }
 
-        Text(text = "${uiState.followers} followers")
+                Spacer(modifier = Modifier.width(10.dp))
 
-        Button(
-            onClick = onFollowClick,
-            enabled = !uiState.isLoading,
-            modifier = Modifier.align(Alignment.End)
-        ) {
-            if (uiState.isLoading) {
-                CircularProgressIndicator()
-            } else {
-                Text(
-                    text = if (uiState.isFollowing) "Following" else "Follow"
-                )
+                Column {
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = profile.role,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            Text(
+                text = "${profile.followers} followers",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Button(
+                onClick = onFollowClick,
+                enabled = !itemState.isLoading,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                if (itemState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = if (profile.isFollowing) "Following" else "Follow"
+                    )
+                }
             }
         }
     }
